@@ -37,3 +37,13 @@ logs/
 
 # OTel / profiling
 *.cpuprofile
+
+# GitHub App private key — never commit
+*.pem
+github_app.pem
+
+# Vercel
+.vercel/
+
+# Simulation output data
+simulation/data/

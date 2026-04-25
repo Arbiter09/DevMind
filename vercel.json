@@ -1,0 +1,40 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "backend/api/vercel_entry.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    },
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/webhooks/(.*)",
+      "dest": "backend/api/vercel_entry.py"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/api/vercel_entry.py"
+    },
+    {
+      "src": "/health",
+      "dest": "backend/api/vercel_entry.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "frontend/$1"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "backend"
+  }
+}

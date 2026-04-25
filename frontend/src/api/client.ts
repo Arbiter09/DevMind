@@ -1,4 +1,5 @@
-const BASE = "/api";
+declare const __API_BASE__: string;
+const BASE = `${__API_BASE__}/api`;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

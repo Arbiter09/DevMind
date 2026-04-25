@@ -18,6 +18,8 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
+from .redis_url import get_redis_url
+
 # Per-tool TTL in seconds
 TOOL_TTL: dict[str, int] = {
     "read_file": 86400,
@@ -92,6 +94,5 @@ _client: CacheClient | None = None
 def get_cache_client() -> CacheClient:
     global _client
     if _client is None:
-        url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        _client = CacheClient(url)
+        _client = CacheClient(get_redis_url())
     return _client

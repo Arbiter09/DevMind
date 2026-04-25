@@ -12,6 +12,8 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
+from ..cache.redis_url import get_redis_url
+
 STREAM_KEY = "devmind:jobs"
 DEAD_LETTER_KEY = "devmind:jobs:dead"
 GROUP_NAME = "devmind-workers"
@@ -92,6 +94,5 @@ _queue: JobQueue | None = None
 def get_job_queue() -> JobQueue:
     global _queue
     if _queue is None:
-        url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        _queue = JobQueue(url)
+        _queue = JobQueue(get_redis_url())
     return _queue

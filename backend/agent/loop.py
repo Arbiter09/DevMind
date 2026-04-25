@@ -18,6 +18,7 @@ import redis.asyncio as aioredis
 import structlog
 
 from ..cache import get_cache_client
+from ..cache.redis_url import get_redis_url
 from ..models import JobStatus, ReviewJob
 from ..telemetry.spans import agent_span, get_current_trace_id
 from .phases import run_analysis, run_context_gathering, run_posting, run_self_eval
@@ -30,9 +31,7 @@ JOB_TTL = 86400 * 7  # keep job records for 7 days
 
 class AgentOrchestrator:
     def __init__(self) -> None:
-        self._redis = aioredis.from_url(
-            os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True
-        )
+        self._redis = aioredis.from_url(get_redis_url(), decode_responses=True)
 
     async def run(self, job_id: str, pr_number: int, repo: str) -> ReviewJob:
         job = ReviewJob(
