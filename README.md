@@ -188,7 +188,7 @@ sequenceDiagram
     participant GH as GitHub
     participant API as FastAPI
     participant Q as Redis Stream
-    participant Loop as Agent Loop
+    participant Worker as Agent Worker
     participant MCP as MCP Server
     participant Cache as Redis Cache
     participant LLM as Claude API
@@ -198,35 +198,35 @@ sequenceDiagram
     API->>Q: XADD devmind:jobs pr_id=1234
     API-->>GH: 200 OK (immediate)
 
-    Q->>Loop: XREADGROUP (worker picks up job)
-    Loop->>OTel: start span devmind.review.pr_1234
+    Q->>Worker: XREADGROUP (worker picks up job)
+    Worker->>OTel: start span devmind.review.pr_1234
 
-    Loop->>MCP: get_pr_diff(1234)
+    Worker->>MCP: get_pr_diff(1234)
     MCP->>Cache: GET mcp:diff:abc123
     Cache-->>MCP: MISS
     MCP->>GH: GET /pulls/1234/files
     GH-->>MCP: diff payload
     MCP->>Cache: SET mcp:diff:abc123 (TTL 1h)
-    MCP-->>Loop: diff result
+    MCP-->>Worker: diff result
 
-    Loop->>MCP: read_file(utils.py, sha=abc123)
+    Worker->>MCP: read_file(utils.py, sha=abc123)
     MCP->>Cache: GET mcp:file:abc123:utils.py
     Cache-->>MCP: HIT (previous run cached this)
-    MCP-->>Loop: file content
+    MCP-->>Worker: file content
 
-    Loop->>LLM: Claude API (compressed prompt + diff + context)
-    LLM-->>Loop: initial review draft
+    Worker->>LLM: Claude API (compressed prompt + diff + context)
+    LLM-->>Worker: initial review draft
 
-    Loop->>LLM: Claude API (draft + 12-dim rubric)
-    LLM-->>Loop: scores [4.2, 3.1, 4.8, ...]
+    Worker->>LLM: Claude API (draft + 12-dim rubric)
+    LLM-->>Worker: scores [4.2, 3.1, 4.8, ...]
 
-    Note over Loop,LLM: avg=3.8 >= threshold, passes
+    Note over Worker,LLM: avg=3.8 >= threshold, passes
 
-    Loop->>MCP: post_review_comment(1234, structured_review)
+    Worker->>MCP: post_review_comment(1234, structured_review)
     MCP->>GH: POST /pulls/1234/reviews
     GH-->>MCP: 201 Created
 
-    Loop->>OTel: end span (tokens=2840, cache_hits=3, score=3.8, iter=1)
+    Worker->>OTel: end span (tokens=2840, cache_hits=3, score=3.8, iter=1)
 ```
 
 ---
