@@ -1,29 +1,26 @@
 """Root-level Vercel Python serverless entry point.
 
-Vercel looks for `api/index.py` and expects an `app` ASGI variable.
-We add the backend package to sys.path so absolute imports work,
-then re-export the FastAPI app.
+sys.path is set to the project root so `backend` is importable as a package.
+All relative imports inside the backend (e.g. `from ..models import`) resolve
+correctly because Python treats `backend` as a top-level package.
 """
 from __future__ import annotations
 
 import os
 import sys
 
-# Make `backend` importable as a top-level package
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BACKEND = os.path.join(ROOT, "backend")
-for path in (ROOT, BACKEND):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+# Project root = /var/task on Vercel, or repo root locally
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Import individual routers with absolute paths (no relative imports)
-from api.webhooks import router as webhooks_router  # noqa: E402
-from api.jobs import router as jobs_router          # noqa: E402
-from api.review import router as review_router      # noqa: E402
-from telemetry import setup_telemetry               # noqa: E402
+from backend.api.webhooks import router as webhooks_router
+from backend.api.jobs import router as jobs_router
+from backend.api.review import router as review_router
+from backend.telemetry import setup_telemetry
 
 setup_telemetry()
 

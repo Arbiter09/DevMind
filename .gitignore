@@ -47,3 +47,4 @@ github_app.pem
 
 # Simulation output data
 simulation/data/
+.vercel
