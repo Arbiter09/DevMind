@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/api/vercel_entry.py",
+      "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "50mb"
@@ -19,22 +19,19 @@
   "routes": [
     {
       "src": "/webhooks/(.*)",
-      "dest": "backend/api/vercel_entry.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/api/(.*)",
-      "dest": "backend/api/vercel_entry.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/health",
-      "dest": "backend/api/vercel_entry.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/(.*)",
       "dest": "frontend/$1"
     }
-  ],
-  "env": {
-    "PYTHONPATH": "backend"
-  }
+  ]
 }

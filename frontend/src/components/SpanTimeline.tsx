@@ -1,4 +1,3 @@
-import { formatDistanceStrict } from "date-fns";
 import type { PhaseTrace } from "../api/client";
 import clsx from "clsx";
 

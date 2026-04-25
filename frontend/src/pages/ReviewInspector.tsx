@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api, type ReviewJob } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import { DimensionScoreBar } from "../components/DimensionScoreBar";
@@ -8,7 +8,6 @@ import { usePolling } from "../hooks/usePolling";
 
 export function ReviewInspector() {
   const { jobId } = useParams<{ jobId?: string }>();
-  const navigate = useNavigate();
   const [searchId, setSearchId] = useState(jobId ?? "");
   const [job, setJob] = useState<ReviewJob | null>(null);
   const [error, setError] = useState("");

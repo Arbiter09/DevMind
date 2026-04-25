@@ -7,9 +7,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ScatterChart,
-  Scatter,
-  ZAxis,
 } from "recharts";
 import { api, type ReviewJob } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
