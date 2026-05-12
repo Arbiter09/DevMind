@@ -16,6 +16,8 @@ export function LiveFeed() {
   const [loading, setLoading] = useState(true);
   const [triggerRepo, setTriggerRepo] = useState("");
   const [triggerPR, setTriggerPR] = useState("");
+  const [showFailed, setShowFailed] = useState(false);
+  const [latestAttemptOnly, setLatestAttemptOnly] = useState(true);
   const [githubRepos, setGitHubRepos] = useState<GitHubRepo[]>([]);
   const [repoPulls, setRepoPulls] = useState<GitHubPull[]>([]);
   const [githubError, setGitHubError] = useState("");
@@ -47,6 +49,24 @@ export function LiveFeed() {
     const fromGitHub = githubRepos.map((repo) => repo.full_name).filter(Boolean);
     return Array.from(new Set([...fromGitHub, ...recentRepos, ...fromJobs])).slice(0, 50);
   }, [githubRepos, jobs, recentRepos]);
+
+  const visibleJobs = useMemo(() => {
+    const sorted = [...jobs].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    const filtered = showFailed ? sorted : sorted.filter((j) => j.status !== "failed");
+
+    if (!latestAttemptOnly) return filtered;
+
+    const byPr = new Map<string, ReviewJob>();
+    for (const job of filtered) {
+      const key = `${job.repo}#${job.pr_number}`;
+      if (!byPr.has(key)) {
+        byPr.set(key, job);
+      }
+    }
+    return Array.from(byPr.values());
+  }, [jobs, latestAttemptOnly, showFailed]);
 
   const refresh = useCallback(async () => {
     try {
@@ -168,21 +188,46 @@ export function LiveFeed() {
           </button>
         </div>
       </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setLatestAttemptOnly((v) => !v)}
+          className={`px-3 py-1 text-xs rounded-md border transition-colors ${
+            latestAttemptOnly
+              ? "bg-gray-700 text-white border-gray-600"
+              : "bg-gray-900 text-gray-300 border-gray-700 hover:bg-gray-800"
+          }`}
+        >
+          Latest attempt only
+        </button>
+        <button
+          onClick={() => setShowFailed((v) => !v)}
+          className={`px-3 py-1 text-xs rounded-md border transition-colors ${
+            showFailed
+              ? "bg-gray-700 text-white border-gray-600"
+              : "bg-gray-900 text-gray-300 border-gray-700 hover:bg-gray-800"
+          }`}
+        >
+          Show failed jobs
+        </button>
+        <p className="text-xs text-gray-500">
+          Showing {visibleJobs.length} of {jobs.length} jobs
+        </p>
+      </div>
       {githubError && (
         <p className="text-xs text-red-400">{githubError}</p>
       )}
 
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
-      ) : jobs.length === 0 ? (
+      ) : visibleJobs.length === 0 ? (
         <div className="text-center py-20 text-gray-600">
           <p className="text-4xl mb-3">🤖</p>
-          <p className="font-medium text-gray-400">No jobs yet</p>
-          <p className="text-sm mt-1">Trigger a review or set up the GitHub webhook</p>
+          <p className="font-medium text-gray-400">No jobs for current filters</p>
+          <p className="text-sm mt-1">Toggle filters above or trigger a new review</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {jobs.map((job) => (
+          {visibleJobs.map((job) => (
             <Link
               key={job.id}
               to={`/inspect/${job.id}`}

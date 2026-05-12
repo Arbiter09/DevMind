@@ -28,7 +28,8 @@ from ..rubric import (
 
 logger = structlog.get_logger(__name__)
 
-MODEL = "claude-3-5-sonnet-20241022"
+# Use a model alias by default so Anthropic version rollovers don't break local runs.
+MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 MAX_TOKENS_EVAL = 2048
 MAX_TOKENS_REFINE = 4096
 
