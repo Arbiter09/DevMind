@@ -12,4 +12,4 @@ COPY backend/ ./backend/
 # Make the backend package importable
 ENV PYTHONPATH=/app
 
-CMD ["python", "-m", "backend.queue.worker_entrypoint"]
+CMD ["python", "-m", "backend.jobqueue.worker_entrypoint"]

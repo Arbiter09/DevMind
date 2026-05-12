@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..queue import get_job_queue
+from ..jobqueue import get_job_queue
 
 router = APIRouter(prefix="/api")
 logger = structlog.get_logger(__name__)

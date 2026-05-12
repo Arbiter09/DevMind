@@ -245,7 +245,7 @@ devmind/
 │   │   ├── server.py    # MCP server entrypoint
 │   │   └── tools/       # get_diff, read_file, post_comment, etc.
 │   ├── cache/           # Redis cache-aside logic + key builders
-│   ├── queue/           # Redis Streams producer/consumer
+│   ├── jobqueue/        # Redis Streams producer/consumer
 │   └── telemetry/       # OpenTelemetry setup + span helpers
 ├── frontend/
 │   └── src/
@@ -271,11 +271,10 @@ devmind/
 # 1. Start infrastructure (Redis, OTel Collector, Jaeger)
 docker compose -f infra/docker-compose.yml up -d
 
-# 2. Backend
-cd backend
-pip install -r requirements.txt
-cp .env.example .env   # fill in ANTHROPIC_API_KEY, GITHUB_TOKEN, etc.
-uvicorn api.main:app --reload --port 8000
+# 2. Backend (from repo root — avoid `cd backend` + `api.main`; see Makefile)
+make setup             # or: pip install -r backend/requirements.txt in a venv
+cp backend/.env.example backend/.env   # fill in ANTHROPIC_API_KEY, GITHUB_TOKEN, etc.
+make backend           # uvicorn backend.api.main:app --reload --port 8000
 
 # 3. Frontend
 cd frontend

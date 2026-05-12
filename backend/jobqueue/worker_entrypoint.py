@@ -5,7 +5,7 @@ The Vercel API (webhooks, jobs endpoints) enqueues jobs;
 this worker picks them up and runs the full agentic loop.
 
 Run:
-    python -m backend.queue.worker_entrypoint
+    python -m backend.jobqueue.worker_entrypoint
 """
 from __future__ import annotations
 

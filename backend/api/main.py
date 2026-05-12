@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import structlog
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -15,6 +16,9 @@ logger = structlog.get_logger(__name__)
 
 
 def create_app() -> FastAPI:
+    # Ensure local development picks up backend/.env regardless of cwd.
+    load_dotenv("backend/.env")
+    load_dotenv(".env")
     setup_telemetry()
 
     app = FastAPI(
@@ -39,7 +43,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup():
-        from ..queue.worker import start_worker_pool
+        from ..jobqueue.worker import start_worker_pool
         app.state.worker_tasks = await start_worker_pool()
         logger.info("app.started")
 

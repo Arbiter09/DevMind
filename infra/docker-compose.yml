@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7.2-alpine
@@ -29,7 +27,7 @@ services:
       - jaeger
 
   jaeger:
-    image: jaegertracing/all-in-one:1.62
+    image: jaegertracing/all-in-one:1.76.0
     container_name: devmind-jaeger
     ports:
       - "16686:16686"  # Jaeger UI

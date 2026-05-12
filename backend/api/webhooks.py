@@ -14,7 +14,7 @@ import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from ..models import PRWebhookPayload
-from ..queue import get_job_queue
+from ..jobqueue import get_job_queue
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

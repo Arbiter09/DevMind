@@ -132,11 +132,13 @@ This starts:
 
 Open two terminal windows:
 
-**Terminal 1 — Backend:**
+**Terminal 1 — Backend** (run from the **repo root** so imports resolve correctly):
 ```bash
-cd backend
-uvicorn api.main:app --reload --port 8000
+cd /path/to/DevMind
+source .venv/bin/activate   # optional
+uvicorn backend.api.main:app --reload --port 8000 --reload-dir backend
 ```
+Or use `make backend`, which runs the same command.
 
 You should see:
 ```

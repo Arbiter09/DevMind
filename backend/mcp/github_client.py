@@ -12,6 +12,10 @@ GITHUB_API = "https://api.github.com"
 class GitHubClient:
     def __init__(self, token: str | None = None) -> None:
         self._token = token or os.getenv("GITHUB_TOKEN", "")
+        if not self._token:
+            raise RuntimeError(
+                "GITHUB_TOKEN is not set. Configure it in backend/.env and restart the backend."
+            )
         self._client = httpx.AsyncClient(
             base_url=GITHUB_API,
             headers={

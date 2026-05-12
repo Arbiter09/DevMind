@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { api, type ReviewJob } from "../api/client";
@@ -6,10 +6,36 @@ import { StatusBadge } from "../components/StatusBadge";
 import { usePolling } from "../hooks/usePolling";
 
 export function LiveFeed() {
+  const RECENT_REPOS_KEY = "devmind.recentRepos";
   const [jobs, setJobs] = useState<ReviewJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggerRepo, setTriggerRepo] = useState("");
   const [triggerPR, setTriggerPR] = useState("");
+  const [recentRepos, setRecentRepos] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_REPOS_KEY);
+      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const rememberRepo = (repo: string) => {
+    const trimmed = repo.trim();
+    if (!trimmed) return;
+
+    setRecentRepos((prev) => {
+      const next = [trimmed, ...prev.filter((r) => r !== trimmed)].slice(0, 10);
+      localStorage.setItem(RECENT_REPOS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const repoOptions = useMemo(() => {
+    const fromJobs = jobs.map((job) => job.repo).filter(Boolean);
+    return Array.from(new Set([...recentRepos, ...fromJobs])).slice(0, 20);
+  }, [jobs, recentRepos]);
 
   const refresh = useCallback(async () => {
     try {
@@ -24,7 +50,9 @@ export function LiveFeed() {
 
   const handleTrigger = async () => {
     if (!triggerRepo || !triggerPR) return;
-    await api.triggerReview(parseInt(triggerPR), triggerRepo);
+    const repo = triggerRepo.trim();
+    await api.triggerReview(parseInt(triggerPR), repo);
+    rememberRepo(repo);
     setTriggerRepo("");
     setTriggerPR("");
     refresh();
@@ -42,9 +70,15 @@ export function LiveFeed() {
           <input
             className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 w-40 focus:outline-none focus:ring-1 focus:ring-brand-500"
             placeholder="owner/repo"
+            list="repo-history"
             value={triggerRepo}
             onChange={(e) => setTriggerRepo(e.target.value)}
           />
+          <datalist id="repo-history">
+            {repoOptions.map((repo) => (
+              <option key={repo} value={repo} />
+            ))}
+          </datalist>
           <input
             className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 w-20 focus:outline-none focus:ring-1 focus:ring-brand-500"
             placeholder="PR #"
