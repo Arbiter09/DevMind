@@ -28,8 +28,6 @@ from ..rubric import (
 
 logger = structlog.get_logger(__name__)
 
-# Use a model alias by default so Anthropic version rollovers don't break local runs.
-MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 MAX_TOKENS_EVAL = 2048
 MAX_TOKENS_REFINE = 4096
 
@@ -43,17 +41,65 @@ def _get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
+def _model_candidates() -> list[str]:
+    configured = os.getenv("ANTHROPIC_MODEL", "").strip()
+    fallback = os.getenv(
+        "ANTHROPIC_MODEL_FALLBACKS",
+        "claude-3-5-sonnet-latest,claude-3-5-haiku-latest,claude-3-haiku-20240307",
+    )
+    raw = ([configured] if configured else []) + [m.strip() for m in fallback.split(",")]
+    models: list[str] = []
+    for model in raw:
+        if model and model not in models:
+            models.append(model)
+    return models
+
+
+def _is_model_not_found(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "not_found_error" in msg and "model" in msg
+
+
+async def _create_with_model_fallback(
+    client: anthropic.AsyncAnthropic,
+    *,
+    prompt: str,
+    max_tokens: int,
+    system: str | None = None,
+) -> tuple[Any, str]:
+    last_exc: Exception | None = None
+    for model in _model_candidates():
+        try:
+            kwargs: dict[str, Any] = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if system:
+                kwargs["system"] = system
+            response = await client.messages.create(**kwargs)
+            return response, model
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if _is_model_not_found(exc):
+                logger.warning("self_eval.model_unavailable", model=model)
+                continue
+            raise
+    raise last_exc if last_exc else RuntimeError("No Anthropic model candidates configured")
+
+
 async def _score_review(review_draft: str, diff: str) -> tuple[list[DimensionScore], int, int]:
     """Ask Claude to score the review. Returns (scores, tokens_in, tokens_out)."""
     client = _get_client()
     prompt = build_eval_prompt(review_draft, diff)
 
-    response = await client.messages.create(
-        model=MODEL,
+    response, model_used = await _create_with_model_fallback(
+        client,
+        prompt=prompt,
         max_tokens=MAX_TOKENS_EVAL,
         system=EVAL_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
     )
+    logger.info("self_eval.score_model_used", model=model_used)
 
     raw = response.content[0].text.strip()
     tokens_in = response.usage.input_tokens
@@ -87,11 +133,12 @@ async def _refine_review(review_draft: str, diff: str, weak: list[DimensionScore
     client = _get_client()
     prompt = build_refinement_prompt(review_draft, diff, weak)
 
-    response = await client.messages.create(
-        model=MODEL,
+    response, model_used = await _create_with_model_fallback(
+        client,
+        prompt=prompt,
         max_tokens=MAX_TOKENS_REFINE,
-        messages=[{"role": "user", "content": prompt}],
     )
+    logger.info("self_eval.refine_model_used", model=model_used)
 
     refined = response.content[0].text
     return refined, response.usage.input_tokens, response.usage.output_tokens

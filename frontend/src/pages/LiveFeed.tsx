@@ -17,7 +17,6 @@ export function LiveFeed() {
   const [triggerRepo, setTriggerRepo] = useState("");
   const [triggerPR, setTriggerPR] = useState("");
   const [showFailed, setShowFailed] = useState(false);
-  const [latestAttemptOnly, setLatestAttemptOnly] = useState(true);
   const [githubRepos, setGitHubRepos] = useState<GitHubRepo[]>([]);
   const [repoPulls, setRepoPulls] = useState<GitHubPull[]>([]);
   const [githubError, setGitHubError] = useState("");
@@ -50,23 +49,35 @@ export function LiveFeed() {
     return Array.from(new Set([...fromGitHub, ...recentRepos, ...fromJobs])).slice(0, 50);
   }, [githubRepos, jobs, recentRepos]);
 
-  const visibleJobs = useMemo(() => {
+  const groupedJobs = useMemo(() => {
     const sorted = [...jobs].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
-    const filtered = showFailed ? sorted : sorted.filter((j) => j.status !== "failed");
-
-    if (!latestAttemptOnly) return filtered;
-
-    const byPr = new Map<string, ReviewJob>();
-    for (const job of filtered) {
+    const byPr = new Map<string, { attempts: ReviewJob[] }>();
+    for (const job of sorted) {
       const key = `${job.repo}#${job.pr_number}`;
-      if (!byPr.has(key)) {
-        byPr.set(key, job);
-      }
+      const existing = byPr.get(key);
+      if (existing) existing.attempts.push(job);
+      else byPr.set(key, { attempts: [job] });
     }
-    return Array.from(byPr.values());
-  }, [jobs, latestAttemptOnly, showFailed]);
+    return Array.from(byPr.values())
+      .map(({ attempts }) => {
+        const representative = showFailed
+          ? attempts[0]
+          : attempts.find((a) => a.status !== "failed");
+        if (!representative) return null;
+        return {
+          latest: representative,
+          attemptsCount: attempts.length,
+          failedCount: attempts.filter((a) => a.status === "failed").length,
+        };
+      })
+      .filter((g): g is { latest: ReviewJob; attemptsCount: number; failedCount: number } => !!g)
+      .sort(
+        (a, b) =>
+          new Date(b.latest.created_at).getTime() - new Date(a.latest.created_at).getTime(),
+      );
+  }, [jobs, showFailed]);
 
   const refresh = useCallback(async () => {
     try {
@@ -190,16 +201,6 @@ export function LiveFeed() {
       </div>
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setLatestAttemptOnly((v) => !v)}
-          className={`px-3 py-1 text-xs rounded-md border transition-colors ${
-            latestAttemptOnly
-              ? "bg-gray-700 text-white border-gray-600"
-              : "bg-gray-900 text-gray-300 border-gray-700 hover:bg-gray-800"
-          }`}
-        >
-          Latest attempt only
-        </button>
-        <button
           onClick={() => setShowFailed((v) => !v)}
           className={`px-3 py-1 text-xs rounded-md border transition-colors ${
             showFailed
@@ -210,7 +211,7 @@ export function LiveFeed() {
           Show failed jobs
         </button>
         <p className="text-xs text-gray-500">
-          Showing {visibleJobs.length} of {jobs.length} jobs
+          Showing {groupedJobs.length} PR groups from {jobs.length} attempts
         </p>
       </div>
       {githubError && (
@@ -219,15 +220,17 @@ export function LiveFeed() {
 
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
-      ) : visibleJobs.length === 0 ? (
+      ) : groupedJobs.length === 0 ? (
         <div className="text-center py-20 text-gray-600">
           <p className="text-4xl mb-3">🤖</p>
-          <p className="font-medium text-gray-400">No jobs for current filters</p>
+          <p className="font-medium text-gray-400">No PR groups for current filters</p>
           <p className="text-sm mt-1">Toggle filters above or trigger a new review</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {visibleJobs.map((job) => (
+          {groupedJobs.map((group) => {
+            const job = group.latest;
+            return (
             <Link
               key={job.id}
               to={`/inspect/${job.id}`}
@@ -241,6 +244,10 @@ export function LiveFeed() {
                   </p>
                   <p className="text-xs text-gray-600 mt-0.5">
                     {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {group.attemptsCount} attempt{group.attemptsCount === 1 ? "" : "s"}
+                    {group.failedCount > 0 ? ` • ${group.failedCount} failed` : ""}
                   </p>
                 </div>
               </div>
@@ -264,7 +271,7 @@ export function LiveFeed() {
                 <span className="text-gray-600 group-hover:text-gray-400 transition-colors">→</span>
               </div>
             </Link>
-          ))}
+          )})}
         </div>
       )}
     </div>
