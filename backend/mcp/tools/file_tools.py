@@ -6,7 +6,14 @@ from typing import Any
 from ...cache import get_cache_client
 from ..github_client import GitHubClient, parse_repo
 
-_github = GitHubClient()
+_github: GitHubClient | None = None
+
+
+def _get_github() -> GitHubClient:
+    global _github
+    if _github is None:
+        _github = GitHubClient()
+    return _github
 
 
 async def read_file(path: str, repo: str, ref: str) -> str:
@@ -20,7 +27,7 @@ async def read_file(path: str, repo: str, ref: str) -> str:
         return cached
 
     owner, name = parse_repo(repo)
-    content = await _github.get_file_content(owner, name, path, ref)
+    content = await _get_github().get_file_content(owner, name, path, ref)
     await cache.set("read_file", content, path=path, repo=repo, ref=ref)
     return content
 
@@ -33,7 +40,7 @@ async def list_changed_files(pr_number: int, repo: str) -> list[dict[str, Any]]:
         return cached
 
     owner, name = parse_repo(repo)
-    files = await _github.get_pr_files(owner, name, pr_number)
+    files = await _get_github().get_pr_files(owner, name, pr_number)
 
     result = [
         {
@@ -58,7 +65,7 @@ async def get_file_history(path: str, repo: str, per_page: int = 10) -> list[dic
         return cached
 
     owner, name = parse_repo(repo)
-    commits = await _github.get_file_commits(owner, name, path, per_page)
+    commits = await _get_github().get_file_commits(owner, name, path, per_page)
 
     result = [
         {

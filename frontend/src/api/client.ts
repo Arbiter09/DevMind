@@ -60,6 +60,21 @@ export interface Metrics {
   quality: { avg_eval_score: number | null; avg_iterations: number | null };
 }
 
+export interface GitHubRepo {
+  full_name: string;
+  private: boolean;
+  default_branch: string | null;
+  updated_at: string | null;
+}
+
+export interface GitHubPull {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  updated_at: string | null;
+  head_ref: string | null;
+}
+
 export const api = {
   getJobs: (limit = 50) =>
     request<ReviewJob[]>(`/jobs?limit=${limit}`),
@@ -75,4 +90,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ pr_number, repo }),
     }),
+
+  getGitHubRepos: () => request<GitHubRepo[]>("/github/repos"),
+
+  getGitHubPulls: (repo: string, state: "open" | "closed" | "all" = "open") =>
+    request<GitHubPull[]>(
+      `/github/pulls?repo=${encodeURIComponent(repo)}&state=${state}`,
+    ),
 };

@@ -6,7 +6,14 @@ from typing import Any
 from ...cache import get_cache_client
 from ..github_client import GitHubClient, parse_repo
 
-_github = GitHubClient()
+_github: GitHubClient | None = None
+
+
+def _get_github() -> GitHubClient:
+    global _github
+    if _github is None:
+        _github = GitHubClient()
+    return _github
 
 
 async def get_pr_metadata(pr_number: int, repo: str) -> dict[str, Any]:
@@ -17,7 +24,7 @@ async def get_pr_metadata(pr_number: int, repo: str) -> dict[str, Any]:
         return cached
 
     owner, name = parse_repo(repo)
-    pr = await _github.get_pr(owner, name, pr_number)
+    pr = await _get_github().get_pr(owner, name, pr_number)
 
     result = {
         "number": pr["number"],
@@ -45,7 +52,7 @@ async def get_pr_diff(pr_number: int, repo: str) -> str:
         return cached
 
     owner, name = parse_repo(repo)
-    files = await _github.get_pr_files(owner, name, pr_number)
+    files = await _get_github().get_pr_files(owner, name, pr_number)
 
     diff_parts = []
     for f in files:
@@ -62,5 +69,5 @@ async def get_pr_diff(pr_number: int, repo: str) -> str:
 async def post_review_comment(pr_number: int, repo: str, body: str) -> dict[str, Any]:
     """Post a structured review comment to the PR on GitHub."""
     owner, name = parse_repo(repo)
-    response = await _github.create_review(owner, name, pr_number, body)
+    response = await _get_github().create_review(owner, name, pr_number, body)
     return {"review_id": response.get("id"), "state": response.get("state")}

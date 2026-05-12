@@ -31,6 +31,46 @@ class GitHubClient:
         r.raise_for_status()
         return r.json()
 
+    async def list_user_repos(self, per_page: int = 100) -> list[dict[str, Any]]:
+        """List repositories visible to the authenticated user."""
+        repos: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            r = await self._client.get(
+                "/user/repos",
+                params={"per_page": per_page, "page": page, "sort": "updated"},
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            repos.extend(batch)
+            if len(batch) < per_page:
+                break
+            page += 1
+        return repos
+
+    async def list_pull_requests(
+        self, owner: str, repo: str, state: str = "open", per_page: int = 100
+    ) -> list[dict[str, Any]]:
+        """List pull requests for a repository."""
+        pulls: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            r = await self._client.get(
+                f"/repos/{owner}/{repo}/pulls",
+                params={"state": state, "per_page": per_page, "page": page},
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            pulls.extend(batch)
+            if len(batch) < per_page:
+                break
+            page += 1
+        return pulls
+
     async def get_pr_files(self, owner: str, repo: str, pr_number: int) -> list[dict[str, Any]]:
         """Returns list of changed files with patch (diff) content."""
         results = []

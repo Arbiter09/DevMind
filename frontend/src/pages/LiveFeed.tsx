@@ -1,7 +1,12 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
-import { api, type ReviewJob } from "../api/client";
+import {
+  api,
+  type GitHubPull,
+  type GitHubRepo,
+  type ReviewJob,
+} from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import { usePolling } from "../hooks/usePolling";
 
@@ -11,6 +16,11 @@ export function LiveFeed() {
   const [loading, setLoading] = useState(true);
   const [triggerRepo, setTriggerRepo] = useState("");
   const [triggerPR, setTriggerPR] = useState("");
+  const [githubRepos, setGitHubRepos] = useState<GitHubRepo[]>([]);
+  const [repoPulls, setRepoPulls] = useState<GitHubPull[]>([]);
+  const [githubError, setGitHubError] = useState("");
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [loadingPulls, setLoadingPulls] = useState(false);
   const [recentRepos, setRecentRepos] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENT_REPOS_KEY);
@@ -34,8 +44,9 @@ export function LiveFeed() {
 
   const repoOptions = useMemo(() => {
     const fromJobs = jobs.map((job) => job.repo).filter(Boolean);
-    return Array.from(new Set([...recentRepos, ...fromJobs])).slice(0, 20);
-  }, [jobs, recentRepos]);
+    const fromGitHub = githubRepos.map((repo) => repo.full_name).filter(Boolean);
+    return Array.from(new Set([...fromGitHub, ...recentRepos, ...fromJobs])).slice(0, 50);
+  }, [githubRepos, jobs, recentRepos]);
 
   const refresh = useCallback(async () => {
     try {
@@ -47,6 +58,46 @@ export function LiveFeed() {
   }, []);
 
   usePolling(refresh, 3000);
+
+  const loadRepos = useCallback(async () => {
+    setLoadingRepos(true);
+    setGitHubError("");
+    try {
+      const repos = await api.getGitHubRepos();
+      setGitHubRepos(repos);
+    } catch (err) {
+      setGitHubError(err instanceof Error ? err.message : "Failed to load repositories");
+    } finally {
+      setLoadingRepos(false);
+    }
+  }, []);
+
+  const loadPulls = useCallback(async (repo: string) => {
+    if (!repo.trim()) {
+      setRepoPulls([]);
+      return;
+    }
+    setLoadingPulls(true);
+    setGitHubError("");
+    try {
+      const pulls = await api.getGitHubPulls(repo.trim(), "open");
+      setRepoPulls(pulls);
+    } catch (err) {
+      setGitHubError(err instanceof Error ? err.message : "Failed to load PRs");
+      setRepoPulls([]);
+    } finally {
+      setLoadingPulls(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRepos();
+  }, [loadRepos]);
+
+  useEffect(() => {
+    setTriggerPR("");
+    void loadPulls(triggerRepo);
+  }, [triggerRepo, loadPulls]);
 
   const handleTrigger = async () => {
     if (!triggerRepo || !triggerPR) return;
@@ -67,32 +118,59 @@ export function LiveFeed() {
         </div>
         {/* Manual trigger */}
         <div className="flex items-center gap-2">
-          <input
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 w-40 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            placeholder="owner/repo"
-            list="repo-history"
+          <select
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 w-56 focus:outline-none focus:ring-1 focus:ring-brand-500"
             value={triggerRepo}
             onChange={(e) => setTriggerRepo(e.target.value)}
-          />
-          <datalist id="repo-history">
+          >
+            <option value="">
+              {loadingRepos ? "Loading repos..." : "Select repository"}
+            </option>
             {repoOptions.map((repo) => (
-              <option key={repo} value={repo} />
+              <option key={repo} value={repo}>
+                {repo}
+              </option>
             ))}
-          </datalist>
-          <input
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 w-20 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            placeholder="PR #"
+          </select>
+          <select
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 w-64 focus:outline-none focus:ring-1 focus:ring-brand-500"
             value={triggerPR}
             onChange={(e) => setTriggerPR(e.target.value)}
-          />
+            disabled={!triggerRepo || loadingPulls}
+          >
+            <option value="">
+              {!triggerRepo
+                ? "Select repo first"
+                : loadingPulls
+                  ? "Loading open PRs..."
+                  : repoPulls.length
+                    ? "Select open PR"
+                    : "No open PRs found"}
+            </option>
+            {repoPulls.map((pr) => (
+              <option key={pr.number} value={String(pr.number)}>
+                #{pr.number} - {pr.title}
+              </option>
+            ))}
+          </select>
           <button
             onClick={handleTrigger}
+            disabled={!triggerRepo || !triggerPR}
             className="bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
           >
             Review
           </button>
+          <button
+            onClick={loadRepos}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-sm border border-gray-700 transition-colors"
+          >
+            Refresh
+          </button>
         </div>
       </div>
+      {githubError && (
+        <p className="text-xs text-red-400">{githubError}</p>
+      )}
 
       {loading ? (
         <div className="text-gray-500 text-sm">Loading...</div>
