@@ -2,7 +2,7 @@
 
 > **Claude API · MCP · FastAPI · Redis · React · OpenTelemetry**
 
-[![npm](https://img.shields.io/npm/v/@devmind/github-mcp?label=%40devmind%2Fgithub-mcp)](https://www.npmjs.com/package/@devmind/github-mcp)
+[![npm](https://img.shields.io/npm/v/@arbiter09/github-mcp?label=%40devmind%2Fgithub-mcp)](https://www.npmjs.com/package/@arbiter09/github-mcp)
 
 DevMind is an autonomous multi-step code review agent. When a PR is opened on GitHub, DevMind reads the diff, gathers relevant code context, generates a structured review, **critiques its own output** against a 12-dimension rubric, and posts comments — all without human involvement.
 
@@ -251,8 +251,8 @@ devmind/
 │   ├── cache/           # Redis cache-aside logic + key builders
 │   ├── jobqueue/        # Redis Streams producer/consumer
 │   └── telemetry/       # OpenTelemetry setup + span helpers
-├── mcp-server/          # Standalone npm package: @devmind/github-mcp
-│   ├── package.json     # Published to npm; npx -y @devmind/github-mcp
+├── mcp-server/          # Standalone npm package: @arbiter09/github-mcp
+│   ├── package.json     # Published to npm; npx -y @arbiter09/github-mcp
 │   ├── smithery.yaml    # Smithery MCP registry manifest
 │   └── src/             # TypeScript — same 6 tools, no Python dependency
 ├── simulation/
@@ -325,10 +325,10 @@ ngrok http 8000
 
 ## MCP npm Package
 
-The GitHub tool layer is published separately as [`@devmind/github-mcp`](mcp-server/README.md) — a standalone TypeScript MCP server usable in any agent without the full DevMind stack:
+The GitHub tool layer is published separately as [`@arbiter09/github-mcp`](mcp-server/README.md) — a standalone TypeScript MCP server usable in any agent without the full DevMind stack:
 
 ```bash
-npx -y @devmind/github-mcp          # Cursor / Claude Desktop one-liner
+npx -y @arbiter09/github-mcp          # Cursor / Claude Desktop one-liner
 ```
 
 Registered on [Smithery](https://smithery.ai) with a `smithery.yaml` manifest. See [`mcp-server/`](mcp-server/) for full docs.

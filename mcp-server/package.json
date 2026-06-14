@@ -1,5 +1,5 @@
 {
-  "name": "@devmind/github-mcp",
+  "name": "@arbiter09/github-mcp",
   "version": "1.0.0",
   "description": "GitHub MCP tools for PR review agents — diff, file context, and comment posting",
   "license": "MIT",
@@ -43,7 +43,7 @@
   },
   "mcp": {
     "command": "npx",
-    "args": ["-y", "@devmind/github-mcp"],
+    "args": ["-y", "@arbiter09/github-mcp"],
     "env": {
       "GITHUB_TOKEN": "your-github-token-here"
     }

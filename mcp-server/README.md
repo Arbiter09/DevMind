@@ -1,4 +1,4 @@
-# @devmind/github-mcp
+# @arbiter09/github-mcp
 
 GitHub MCP tools for autonomous PR review agents. Exposes six tools over the
 [Model Context Protocol](https://modelcontextprotocol.io) (stdio transport) so
@@ -8,14 +8,14 @@ interact with GitHub pull requests without writing bespoke API glue code.
 ## Quick Start — one command
 
 ```bash
-npx -y @devmind/github-mcp
+npx -y @arbiter09/github-mcp
 ```
 
 Set `GITHUB_TOKEN` in the environment first:
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
-npx -y @devmind/github-mcp
+npx -y @arbiter09/github-mcp
 ```
 
 ## Cursor Setup
@@ -28,7 +28,7 @@ Add to your Cursor MCP config (`~/.cursor/mcp.json` or the workspace
   "mcpServers": {
     "devmind-github": {
       "command": "npx",
-      "args": ["-y", "@devmind/github-mcp"],
+      "args": ["-y", "@arbiter09/github-mcp"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
       }
@@ -46,7 +46,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "devmind-github": {
       "command": "npx",
-      "args": ["-y", "@devmind/github-mcp"],
+      "args": ["-y", "@arbiter09/github-mcp"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
       }
@@ -115,7 +115,7 @@ Required permissions:
 
 ## MCP Registry
 
-This server is listed on [Smithery](https://smithery.ai) under `@devmind/github-mcp`.
+This server is listed on [Smithery](https://smithery.ai) under `@arbiter09/github-mcp`.
 
 ## Development
 
