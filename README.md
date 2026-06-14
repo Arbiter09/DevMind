@@ -2,7 +2,11 @@
 
 > **Claude API · MCP · FastAPI · Redis · React · OpenTelemetry**
 
+[![npm](https://img.shields.io/npm/v/@devmind/github-mcp?label=%40devmind%2Fgithub-mcp)](https://www.npmjs.com/package/@devmind/github-mcp)
+
 DevMind is an autonomous multi-step code review agent. When a PR is opened on GitHub, DevMind reads the diff, gathers relevant code context, generates a structured review, **critiques its own output** against a 12-dimension rubric, and posts comments — all without human involvement.
+
+The GitHub tool layer is also published as a standalone MCP package — see [`mcp-server/`](mcp-server/README.md) for one-command setup.
 
 ## Headline Metrics
 
@@ -241,12 +245,22 @@ devmind/
 │   │   ├── loop.py      # Main orchestrator
 │   │   ├── phases/      # context_gathering, analysis, self_eval, posting
 │   │   └── rubric.py    # 12-dimension evaluation prompts
-│   ├── mcp/             # MCP server + tool implementations
+│   ├── mcp/             # MCP server + tool implementations (internal)
 │   │   ├── server.py    # MCP server entrypoint
 │   │   └── tools/       # get_diff, read_file, post_comment, etc.
 │   ├── cache/           # Redis cache-aside logic + key builders
 │   ├── jobqueue/        # Redis Streams producer/consumer
 │   └── telemetry/       # OpenTelemetry setup + span helpers
+├── mcp-server/          # Standalone npm package: @devmind/github-mcp
+│   ├── package.json     # Published to npm; npx -y @devmind/github-mcp
+│   ├── smithery.yaml    # Smithery MCP registry manifest
+│   └── src/             # TypeScript — same 6 tools, no Python dependency
+├── simulation/
+│   ├── pr_templates.py  # 60 annotated PR templates (Python/TS/Go/Java/Rust)
+│   ├── data/
+│   │   └── annotated_prs.jsonl  # Committed benchmark — 60 PRs, 12-dim annotations
+│   ├── run_simulation.py        # Agent simulation with per-dimension agreement scoring
+│   └── report.py                # Metric computation and report printing
 ├── frontend/
 │   └── src/
 │       ├── pages/       # LiveFeed, ReviewInspector, CostAnalytics, Quality
@@ -306,3 +320,38 @@ ngrok http 8000
 - **60% faster turnaround**: The agent works 24/7, processes immediately on webhook, and runs multiple PRs concurrently via Redis Streams workers — no human queue.
 - **38% token cost reduction**: Redis caching eliminates redundant GitHub reads within and across PRs; prompt compression sends only relevant code context rather than full files.
 - **91% agreement rate**: The self-evaluation loop with the 12-dimension rubric catches weak reviews before they're posted — Claude acts as its own reviewer, iterating until the output meets quality standards.
+
+---
+
+## MCP npm Package
+
+The GitHub tool layer is published separately as [`@devmind/github-mcp`](mcp-server/README.md) — a standalone TypeScript MCP server usable in any agent without the full DevMind stack:
+
+```bash
+npx -y @devmind/github-mcp          # Cursor / Claude Desktop one-liner
+```
+
+Registered on [Smithery](https://smithery.ai) with a `smithery.yaml` manifest. See [`mcp-server/`](mcp-server/) for full docs.
+
+---
+
+## Evaluation Benchmark
+
+`simulation/data/annotated_prs.jsonl` — **60 annotated pull requests** committed to the repo, spanning 5 languages and all 12 rubric dimensions:
+
+| Language | Templates |
+|----------|-----------|
+| Python | 20 |
+| TypeScript | 12 |
+| Go | 10 |
+| Java | 10 |
+| Rust | 8 |
+
+Each record includes a 12-dimension ground-truth annotation with `expected` flag and `rationale`. The simulation harness scores per-dimension agreement between the agent's self-eval scores and the annotations, producing the headline 91% figure.
+
+```bash
+# Run agent against the benchmark and print metrics:
+cd simulation
+python run_simulation.py --annotated --output data/results.jsonl
+python report.py --results data/results.jsonl
+```

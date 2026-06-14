@@ -1,0 +1,51 @@
+{
+  "name": "@devmind/github-mcp",
+  "version": "1.0.0",
+  "description": "GitHub MCP tools for PR review agents — diff, file context, and comment posting",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "devmind-github-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "github",
+    "code-review",
+    "claude",
+    "model-context-protocol",
+    "devmind",
+    "pull-request"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Arbiter09/DevMind"
+  },
+  "mcp": {
+    "command": "npx",
+    "args": ["-y", "@devmind/github-mcp"],
+    "env": {
+      "GITHUB_TOKEN": "your-github-token-here"
+    }
+  }
+}

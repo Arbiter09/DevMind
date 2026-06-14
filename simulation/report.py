@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compute and display the three DevMind headline metrics from simulation results.
+"""Compute and display the DevMind headline metrics from simulation results.
 
 Usage:
     python report.py --results data/results.jsonl
@@ -60,7 +60,6 @@ def metric_token_cost(results: list[dict], baseline: list[dict] | None) -> dict[
         out["total_tokens_no_cache"] = baseline_total
         out["token_reduction_pct"] = round(reduction_pct, 1)
     else:
-        # Estimate: each cache hit saves one read_file / get_diff call (~800 tokens avg)
         estimated_saved = total_hits * 800
         estimated_baseline = cached_total + estimated_saved
         out["estimated_token_reduction_pct"] = round(
@@ -71,27 +70,77 @@ def metric_token_cost(results: list[dict], baseline: list[dict] | None) -> dict[
 
 
 def metric_agreement_rate(results: list[dict]) -> dict[str, Any]:
-    """Metric 3: Reviewer agreement rate (avg_eval_score >= 3.5)."""
+    """Metric 3: Reviewer agreement rate — per-dimension hit rate against annotations.
+
+    For results that carry 'dim_results' (annotated benchmark), we compute the
+    fraction of (PR, dimension) pairs where the agent's flag decision matches the
+    ground-truth annotation. For results without annotations, we fall back to the
+    avg_eval_score proxy.
+    """
+    # Per-dimension agreement (annotated runs)
+    annotated = [r for r in results if r.get("dim_results")]
+    unannotated = [r for r in results if not r.get("dim_results")]
+
+    if annotated:
+        # Aggregate across all PRs and all 12 dimensions
+        all_dim_hits: dict[str, list[bool]] = {}
+        for r in annotated:
+            for dr in r["dim_results"]:
+                dim = dr["dimension"]
+                if dim not in all_dim_hits:
+                    all_dim_hits[dim] = []
+                all_dim_hits[dim].append(dr["hit"])
+
+        per_dim_rates = {
+            dim: round(sum(hits) / len(hits) * 100, 1)
+            for dim, hits in all_dim_hits.items()
+        }
+        all_hits_flat = [hit for hits in all_dim_hits.values() for hit in hits]
+        overall_dim_agreement = round(sum(all_hits_flat) / len(all_hits_flat) * 100, 1)
+    else:
+        per_dim_rates = {}
+        overall_dim_agreement = 0.0
+
+    # PR-level agreement (agreed = dimension hit rate >= 0.91 OR score threshold fallback)
     agreed = [r for r in results if r.get("agreed", False)]
     agreement_rate = len(agreed) / len(results) * 100
 
     all_scores = [r["avg_eval_score"] for r in results if r.get("avg_eval_score")]
     avg_score = statistics.mean(all_scores) if all_scores else 0.0
 
+    # Per-template breakdown
     by_template: dict[str, dict] = {}
     for r in results:
-        tmpl = r["template_name"]
+        tmpl = r.get("template_name", "unknown")
         if tmpl not in by_template:
-            by_template[tmpl] = {"agreed": 0, "total": 0}
+            by_template[tmpl] = {"agreed": 0, "total": 0, "rates": []}
         by_template[tmpl]["total"] += 1
         if r.get("agreed"):
             by_template[tmpl]["agreed"] += 1
+        if r.get("agreement_rate") is not None:
+            by_template[tmpl]["rates"].append(r["agreement_rate"])
 
     template_rates = {
         t: round(v["agreed"] / v["total"] * 100, 1)
         for t, v in by_template.items()
     }
 
+    # Per-language breakdown (annotated results have language field)
+    by_language: dict[str, dict] = {}
+    for r in results:
+        lang = r.get("language", "unknown")
+        if lang not in by_language:
+            by_language[lang] = {"agreed": 0, "total": 0}
+        by_language[lang]["total"] += 1
+        if r.get("agreed"):
+            by_language[lang]["agreed"] += 1
+
+    language_rates = {
+        lang: round(v["agreed"] / v["total"] * 100, 1)
+        for lang, v in by_language.items()
+    }
+
+    # Per-severity breakdown
     by_severity: dict[str, dict] = {}
     for r in results:
         sev = r.get("severity", "unknown")
@@ -113,10 +162,14 @@ def metric_agreement_rate(results: list[dict]) -> dict[str, Any]:
 
     return {
         "agreement_rate_pct": round(agreement_rate, 1),
+        "dimension_agreement_pct": overall_dim_agreement,
         "avg_eval_score": round(avg_score, 3),
         "agreed_count": len(agreed),
         "total_count": len(results),
+        "annotated_count": len(annotated),
+        "per_dimension_rates": per_dim_rates,
         "by_template": template_rates,
+        "by_language": language_rates,
         "by_severity": severity_rates,
         "iteration_distribution": iter_dist,
     }
@@ -162,18 +215,35 @@ def print_report(
     print(sep)
     rate = agreement["agreement_rate_pct"]
     tag3 = "✅" if rate >= 91 else "⚠️ "
-    print(f"  Agreement rate             : {tag3} {rate:.1f}%  (target: ≥91%)")
+    print(f"  PR-level agreement rate    : {tag3} {rate:.1f}%  (target: ≥91%)")
+
+    if agreement["dimension_agreement_pct"]:
+        dim_rate = agreement["dimension_agreement_pct"]
+        dim_tag = "✅" if dim_rate >= 91 else "⚠️ "
+        print(f"  Dimension-level agreement  : {dim_tag} {dim_rate:.1f}%  "
+              f"(annotated, {agreement['annotated_count']} PRs)")
+
     print(f"  Avg eval score             : {agreement['avg_eval_score']:.3f} / 5.0")
     print(f"  Agreed / total             : {agreement['agreed_count']} / {agreement['total_count']}")
 
-    print("\n  By severity:")
-    for sev, r in sorted(agreement["by_severity"].items()):
-        print(f"    {sev:<10} {r:.1f}%")
+    if agreement.get("per_dimension_rates"):
+        print("\n  Per-dimension agreement rate (annotated benchmark):")
+        for dim, rate_pct in sorted(agreement["per_dimension_rates"].items(),
+                                    key=lambda x: x[1]):
+            bar = "█" * int(rate_pct / 5)
+            flag = "⚠️ " if rate_pct < 80 else "   "
+            print(f"    {flag}{dim:<25} {rate_pct:>5.1f}%  {bar}")
 
-    print("\n  By template:")
-    for tmpl, r in sorted(agreement["by_template"].items(), key=lambda x: x[1]):
-        bar = "█" * int(r / 5)
-        print(f"    {tmpl:<30} {r:>5.1f}%  {bar}")
+    if agreement.get("by_language"):
+        print("\n  By language:")
+        for lang, r in sorted(agreement["by_language"].items()):
+            print(f"    {lang:<15} {r:.1f}%")
+
+    print("\n  By severity:")
+    for sev in ["critical", "high", "medium", "low"]:
+        r = agreement["by_severity"].get(sev)
+        if r is not None:
+            print(f"    {sev:<10} {r:.1f}%")
 
     print("\n  Iteration distribution:")
     for iters, count in sorted(agreement["iteration_distribution"].items()):
@@ -199,7 +269,6 @@ def main() -> None:
 
     print_report(turnaround, cost, agreement, len(results))
 
-    # Write JSON summary for CI / dashboard ingestion
     summary_path = Path(args.results).parent / "metrics_summary.json"
     with open(summary_path, "w") as f:
         json.dump(

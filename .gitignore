@@ -45,8 +45,10 @@ github_app.pem
 # Vercel
 .vercel/
 
-# Simulation output data
-simulation/data/
+# Simulation output data (generated files only — annotated benchmark is committed)
+simulation/data/*.jsonl
+simulation/data/*.json
+!simulation/data/annotated_prs.jsonl
 .vercel
 
 demo/

@@ -91,7 +91,9 @@ def generate_mock_eval_scores(expected_findings: list[str], rng: random.Random) 
     """Generate realistic eval scores: high on covered dimensions, lower on uncovered ones."""
     covered = set(expected_findings)
     scores = []
-    for name, _ in DIMENSIONS:
+    for dim in DIMENSIONS:
+        # DIMENSIONS is a list of strings in pr_templates.py
+        name = dim if isinstance(dim, str) else dim[0]
         if name in covered:
             score = round(rng.uniform(4.0, 5.0), 1)
         else:

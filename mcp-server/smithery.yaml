@@ -1,0 +1,41 @@
+name: "@devmind/github-mcp"
+description: >
+  GitHub MCP tools for autonomous PR review agents. Provides diff fetching,
+  file context reading, commit history lookup, and review comment posting —
+  all through the Model Context Protocol over stdio.
+version: "1.0.0"
+runtime: node
+command: npx
+args:
+  - "-y"
+  - "@devmind/github-mcp"
+env:
+  GITHUB_TOKEN:
+    description: >
+      GitHub Personal Access Token or App installation token.
+      Requires read access to Contents and Pull requests,
+      and write access to Pull requests for posting comments.
+    required: true
+tools:
+  - name: get_pr_metadata
+    description: >
+      Fetch PR title, author, labels, base branch, head SHA,
+      and change stats (additions, deletions, changed_files).
+  - name: get_pr_diff
+    description: >
+      Get the unified diff of all files changed in a pull request.
+  - name: read_file
+    description: >
+      Read raw file content at a specific git ref (SHA or branch name).
+      Content at a commit SHA is immutable — safe to cache aggressively.
+  - name: list_changed_files
+    description: >
+      List all files changed in a PR with their status
+      (added / modified / removed / renamed) and line counts.
+  - name: get_file_history
+    description: >
+      Return recent commits that touched a file — useful for understanding
+      ownership patterns and change frequency.
+  - name: post_review_comment
+    description: >
+      Post a markdown-formatted review comment to the pull request on GitHub.
