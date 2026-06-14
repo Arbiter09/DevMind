@@ -2,11 +2,40 @@
 
 > **Claude API · MCP · FastAPI · Redis · React · OpenTelemetry**
 
-[![npm](https://img.shields.io/npm/v/@arbiter09/github-mcp?label=%40devmind%2Fgithub-mcp)](https://www.npmjs.com/package/@arbiter09/github-mcp)
+[![npm](https://img.shields.io/npm/v/@arbiter09/github-mcp?label=%40arbiter09%2Fgithub-mcp)](https://www.npmjs.com/package/@arbiter09/github-mcp)
 
 DevMind is an autonomous multi-step code review agent. When a PR is opened on GitHub, DevMind reads the diff, gathers relevant code context, generates a structured review, **critiques its own output** against a 12-dimension rubric, and posts comments — all without human involvement.
 
 The GitHub tool layer is also published as a standalone MCP package — see [`mcp-server/`](mcp-server/README.md) for one-command setup.
+
+## Install the MCP Server
+
+```bash
+# Use directly (no install needed) — for Cursor / Claude Desktop:
+npx -y @arbiter09/github-mcp
+
+# Or install globally:
+npm install -g @arbiter09/github-mcp
+
+# Or as a project dependency:
+npm install @arbiter09/github-mcp
+```
+
+Add to your Cursor MCP config (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "devmind-github": {
+      "command": "npx",
+      "args": ["-y", "@arbiter09/github-mcp"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
 
 ## Headline Metrics
 
