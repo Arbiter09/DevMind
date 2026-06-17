@@ -7,7 +7,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    let detail = "";
+    try {
+      const body = await res.json() as { detail?: string };
+      detail = body.detail ?? "";
+    } catch {
+      detail = await res.text().catch(() => "");
+    }
+    throw new Error(detail || `API error ${res.status}`);
   }
   return res.json() as Promise<T>;
 }

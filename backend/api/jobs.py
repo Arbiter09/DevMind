@@ -15,6 +15,12 @@ logger = structlog.get_logger(__name__)
 
 JOB_KEY_PREFIX = "devmind:job:"
 
+# redis.exceptions may not be available in all environments; import defensively
+try:
+    from redis.exceptions import RedisError
+except ImportError:  # pragma: no cover
+    RedisError = Exception  # type: ignore[assignment,misc]
+
 
 def _get_redis() -> aioredis.Redis:
     return aioredis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
@@ -34,6 +40,9 @@ async def list_jobs(limit: int = 50) -> list[dict[str, Any]]:
                 jobs.append(job.model_dump())
         jobs.sort(key=lambda j: j.get("created_at", ""), reverse=True)
         return jobs
+    except (RedisError, OSError, ConnectionRefusedError) as exc:
+        logger.warning("jobs.redis_unavailable", error=str(exc))
+        return []
     finally:
         await r.aclose()
 
@@ -47,6 +56,11 @@ async def get_job(job_id: str) -> dict[str, Any]:
         if not raw:
             raise HTTPException(status_code=404, detail="Job not found")
         return ReviewJob.model_validate_json(raw).model_dump()
+    except HTTPException:
+        raise
+    except (RedisError, OSError, ConnectionRefusedError) as exc:
+        logger.warning("job_detail.redis_unavailable", job_id=job_id, error=str(exc))
+        raise HTTPException(status_code=503, detail="Storage unavailable — Redis not reachable") from exc
     finally:
         await r.aclose()
 
@@ -64,7 +78,15 @@ async def get_metrics() -> dict[str, Any]:
                 jobs.append(ReviewJob.model_validate_json(raw))
 
         if not jobs:
-            return {"message": "No jobs recorded yet"}
+            return {
+                "total_jobs": 0,
+                "completed": 0,
+                "failed": 0,
+                "pending": 0,
+                "tokens": {"total_input": 0, "total_output": 0, "total": 0},
+                "cache": {"hits": 0, "misses": 0, "hit_rate": 0},
+                "quality": {"avg_eval_score": None, "avg_iterations": None},
+            }
 
         completed = [j for j in jobs if j.status == "completed"]
         total_tokens_in = sum(j.total_tokens_input for j in completed)
@@ -96,6 +118,17 @@ async def get_metrics() -> dict[str, Any]:
                     sum(j.eval_iterations for j in completed) / len(completed), 2
                 ) if completed else None,
             },
+        }
+    except (RedisError, OSError, ConnectionRefusedError) as exc:
+        logger.warning("metrics.redis_unavailable", error=str(exc))
+        return {
+            "total_jobs": 0,
+            "completed": 0,
+            "failed": 0,
+            "pending": 0,
+            "tokens": {"total_input": 0, "total_output": 0, "total": 0},
+            "cache": {"hits": 0, "misses": 0, "hit_rate": 0},
+            "quality": {"avg_eval_score": None, "avg_iterations": None},
         }
     finally:
         await r.aclose()

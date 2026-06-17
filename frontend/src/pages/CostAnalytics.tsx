@@ -21,9 +21,13 @@ export function CostAnalytics() {
   const [jobs, setJobs] = useState<ReviewJob[]>([]);
 
   const refresh = useCallback(async () => {
-    const [m, j] = await Promise.all([api.getMetrics(), api.getJobs(100)]);
-    setMetrics(m);
-    setJobs(j.filter((j) => j.status === "completed"));
+    try {
+      const [m, j] = await Promise.all([api.getMetrics(), api.getJobs(100)]);
+      setMetrics(m);
+      setJobs(j.filter((j) => j.status === "completed"));
+    } catch (err) {
+      console.error("Failed to fetch analytics:", err);
+    }
   }, []);
 
   usePolling(refresh, 10000);

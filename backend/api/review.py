@@ -39,7 +39,10 @@ def _map_github_error(exc: httpx.HTTPStatusError) -> HTTPException:
 @router.get("/github/repos")
 async def list_github_repos() -> list[dict[str, Any]]:
     """List repositories visible to the configured GitHub token."""
-    client = GitHubClient()
+    try:
+        client = GitHubClient()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
         repos = await client.list_user_repos()
         return [
@@ -65,7 +68,10 @@ async def list_repo_pulls(
 ) -> list[dict[str, Any]]:
     """List pull requests for a repository visible to the configured token."""
     owner, repo_name = parse_repo(repo)
-    client = GitHubClient()
+    try:
+        client = GitHubClient()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
         pulls = await client.list_pull_requests(owner, repo_name, state=state)
         return [
@@ -89,8 +95,12 @@ async def list_repo_pulls(
 async def trigger_review(req: ReviewRequest) -> dict[str, Any]:
     """Manually enqueue a PR review job."""
     job_id = str(uuid.uuid4())
-    queue = get_job_queue()
-    entry_id = await queue.enqueue(job_id=job_id, pr_number=req.pr_number, repo=req.repo)
+    try:
+        queue = get_job_queue()
+        entry_id = await queue.enqueue(job_id=job_id, pr_number=req.pr_number, repo=req.repo)
+    except Exception as exc:
+        logger.error("manual_review.enqueue_failed", error=str(exc))
+        raise HTTPException(status_code=503, detail="Job queue unavailable — Redis not reachable") from exc
 
     logger.info("manual_review.enqueued", job_id=job_id, pr=req.pr_number, repo=req.repo)
     return {"job_id": job_id, "entry_id": entry_id, "status": "queued"}

@@ -15,8 +15,12 @@ export function QualityMetrics() {
   const [jobs, setJobs] = useState<ReviewJob[]>([]);
 
   const refresh = useCallback(async () => {
-    const data = await api.getJobs(200);
-    setJobs(data.filter((j) => j.status === "completed"));
+    try {
+      const data = await api.getJobs(200);
+      setJobs(data.filter((j) => j.status === "completed"));
+    } catch (err) {
+      console.error("Failed to fetch quality metrics:", err);
+    }
   }, []);
 
   usePolling(refresh, 10000);

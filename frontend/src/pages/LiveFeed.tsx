@@ -83,6 +83,8 @@ export function LiveFeed() {
     try {
       const data = await api.getJobs();
       setJobs(data);
+    } catch (err) {
+      console.error("Failed to fetch jobs:", err);
     } finally {
       setLoading(false);
     }
