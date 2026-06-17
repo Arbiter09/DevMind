@@ -57,7 +57,10 @@ async def _create_with_model_fallback(
             response = await client.messages.create(
                 model=model,
                 max_tokens=MAX_TOKENS,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{
+                    "role": "user",
+                    "content": [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}],
+                }],
             )
             return response, model
         except Exception as exc:  # noqa: BLE001

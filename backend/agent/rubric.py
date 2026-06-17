@@ -48,47 +48,46 @@ Do not include any text outside the JSON array.
 """
 
 
-def build_eval_prompt(review_draft: str, diff: str) -> str:
+def build_eval_system_blocks(diff: str) -> list[dict]:
+    """Return the system content blocks for self-eval API calls.
+
+    The diff is included here — once — with a cache breakpoint so Anthropic
+    charges cache-read prices (~10% of normal) on every subsequent call that
+    uses the same diff. User messages across iterations stay small and diff-free.
+    """
     dimensions_text = "\n".join(
         f"{i+1}. {name} — {desc}" for i, (name, desc) in enumerate(DIMENSIONS)
     )
-    return f"""\
-## Pull Request Diff
-```diff
-{diff[:8000]}
-```
-
-## Generated Review Draft
-{review_draft}
-
-## Dimensions to Score
-{dimensions_text}
-
-Score the review draft against each dimension. Return only the JSON array.
-"""
+    return [
+        {
+            "type": "text",
+            "text": (
+                EVAL_SYSTEM_PROMPT
+                + f"\n\n## Pull Request Diff\n```diff\n{diff[:8000]}\n```"
+                + f"\n\n## Dimensions to Score\n{dimensions_text}"
+            ),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
 
 
-def build_refinement_prompt(
-    review_draft: str,
-    diff: str,
-    weak_dimensions: list[DimensionScore],
-) -> str:
+def build_score_message(review_draft: str) -> str:
+    """User message asking Claude to score a review draft (no diff — it's in the system)."""
+    return f"## Generated Review Draft\n{review_draft}\n\nScore the review draft against each dimension. Return only the JSON array."
+
+
+def build_refinement_message(weak_dimensions: list[DimensionScore]) -> str:
+    """User message asking Claude to refine the review (no diff — it's in the system)."""
     weak_text = "\n".join(
         f"- {d.name} (score {d.score}/5): {d.notes}" for d in weak_dimensions
     )
-    return f"""\
-The previous review draft was evaluated and found lacking in these areas:
+    return (
+        f"The review was evaluated and found lacking in these areas:\n\n{weak_text}\n\n"
+        "Rewrite the review, specifically improving the weak dimensions listed above. "
+        "Keep all strong sections from the previous draft. Return only the improved review."
+    )
 
-{weak_text}
 
-## Pull Request Diff
-```diff
-{diff[:8000]}
-```
-
-## Previous Review Draft
-{review_draft}
-
-Rewrite the review, specifically improving the weak dimensions listed above.
-Keep all strong sections from the previous draft. Return only the improved review.
-"""
+def build_rescore_message(review_draft: str) -> str:
+    """User message asking Claude to re-score after refinement (no diff — it's in the system)."""
+    return f"## Revised Review Draft\n{review_draft}\n\nScore this revised draft against each dimension. Return only the JSON array."

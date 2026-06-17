@@ -27,6 +27,9 @@ TOOL_TTL: dict[str, int] = {
     "get_pr_metadata": 300,
     "list_changed_files": 3600,
     "get_file_history": 1800,
+    # Keyed on (repo, pr_number, head_sha) — the SHA is immutable so the
+    # review for a given commit never changes. Cached for 7 days.
+    "review_draft": 86400 * 7,
 }
 
 DEFAULT_TTL = 600

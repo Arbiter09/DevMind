@@ -69,20 +69,57 @@ class AgentOrchestrator:
                 phase1_trace.cache_hits = h_after - h_before
                 phase1_trace.cache_misses = m_after - m_before
 
-                # ── Phase 2: Analysis ────────────────────────────────────────
-                log.info("phase.start", phase="analysis")
-                review_draft, phase2_trace = await run_analysis(metadata, diff, file_contexts)
-                job.phases.append(phase2_trace)
+                head_sha = metadata["head_sha"]
 
-                # ── Phase 3: Self-Evaluation ─────────────────────────────────
-                log.info("phase.start", phase="self_eval")
-                final_review, eval_scores, iterations, avg_score, phase3_trace = (
-                    await run_self_eval(review_draft, diff, pr_number)
+                # ── Review-draft cache check ─────────────────────────────────
+                # If this exact commit has been reviewed before, skip the
+                # Claude calls entirely — zero tokens spent.
+                cached_review, draft_hit = await cache.get(
+                    "review_draft", repo=repo, pr_number=pr_number, head_sha=head_sha
                 )
-                job.phases.append(phase3_trace)
-                job.eval_scores = eval_scores
-                job.eval_iterations = iterations
-                job.avg_eval_score = round(avg_score, 3)
+
+                if draft_hit:
+                    log.info("review_draft.cache_hit", head_sha=head_sha)
+                    final_review = cached_review["review"]
+                    eval_scores_raw = cached_review["eval_scores"]
+                    iterations = cached_review["iterations"]
+                    avg_score = cached_review["avg_score"]
+
+                    from ..models import EvalScore
+                    eval_scores = [EvalScore(**s) for s in eval_scores_raw]
+
+                    job.eval_scores = eval_scores
+                    job.eval_iterations = iterations
+                    job.avg_eval_score = round(avg_score, 3)
+                else:
+                    # ── Phase 2: Analysis ────────────────────────────────────
+                    log.info("phase.start", phase="analysis")
+                    review_draft, phase2_trace = await run_analysis(metadata, diff, file_contexts)
+                    job.phases.append(phase2_trace)
+
+                    # ── Phase 3: Self-Evaluation ─────────────────────────────
+                    log.info("phase.start", phase="self_eval")
+                    final_review, eval_scores, iterations, avg_score, phase3_trace = (
+                        await run_self_eval(review_draft, diff, pr_number)
+                    )
+                    job.phases.append(phase3_trace)
+                    job.eval_scores = eval_scores
+                    job.eval_iterations = iterations
+                    job.avg_eval_score = round(avg_score, 3)
+
+                    # Persist so repeat reviews of the same commit are free.
+                    await cache.set(
+                        "review_draft",
+                        {
+                            "review": final_review,
+                            "eval_scores": [s.model_dump() for s in eval_scores],
+                            "iterations": iterations,
+                            "avg_score": avg_score,
+                        },
+                        repo=repo,
+                        pr_number=pr_number,
+                        head_sha=head_sha,
+                    )
 
                 # ── Phase 4: Posting ─────────────────────────────────────────
                 log.info("phase.start", phase="posting")

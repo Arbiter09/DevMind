@@ -17,13 +17,13 @@ import structlog
 from ...models import EvalScore, PhaseTrace
 from ...telemetry.spans import agent_span, record_eval_result, record_llm_usage
 from ..rubric import (
-    DIMENSIONS,
     MAX_ITERATIONS,
     PASS_THRESHOLD,
     DimensionScore,
-    build_eval_prompt,
-    build_refinement_prompt,
-    EVAL_SYSTEM_PROMPT,
+    build_eval_system_blocks,
+    build_score_message,
+    build_refinement_message,
+    build_rescore_message,
 )
 
 logger = structlog.get_logger(__name__)
@@ -65,7 +65,8 @@ async def _create_with_model_fallback(
     *,
     prompt: str,
     max_tokens: int,
-    system: str | None = None,
+    system: list[dict] | None = None,
+    messages: list[dict] | None = None,
 ) -> tuple[Any, str]:
     last_exc: Exception | None = None
     for model in _model_candidates():
@@ -73,7 +74,7 @@ async def _create_with_model_fallback(
             kwargs: dict[str, Any] = {
                 "model": model,
                 "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages if messages is not None else [{"role": "user", "content": prompt}],
             }
             if system:
                 kwargs["system"] = system
@@ -88,60 +89,20 @@ async def _create_with_model_fallback(
     raise last_exc if last_exc else RuntimeError("No Anthropic model candidates configured")
 
 
-async def _score_review(review_draft: str, diff: str) -> tuple[list[DimensionScore], int, int]:
-    """Ask Claude to score the review. Returns (scores, tokens_in, tokens_out)."""
-    client = _get_client()
-    prompt = build_eval_prompt(review_draft, diff)
-
-    response, model_used = await _create_with_model_fallback(
-        client,
-        prompt=prompt,
-        max_tokens=MAX_TOKENS_EVAL,
-        system=EVAL_SYSTEM_PROMPT,
-    )
-    logger.info("self_eval.score_model_used", model=model_used)
-
-    raw = response.content[0].text.strip()
-    tokens_in = response.usage.input_tokens
-    tokens_out = response.usage.output_tokens
-
-    # Parse JSON response
-    try:
-        items = json.loads(raw)
-    except json.JSONDecodeError:
-        # Attempt to extract JSON array from the response
-        start = raw.find("[")
-        end = raw.rfind("]") + 1
-        items = json.loads(raw[start:end]) if start != -1 else []
-
+def _parse_scores(raw: str) -> list[DimensionScore]:
+    """Parse the JSON score array returned by Claude."""
+    from ..rubric import DIMENSIONS
     dimension_names = {name for name, _ in DIMENSIONS}
-    scores = [
-        DimensionScore(
-            name=item["name"],
-            score=float(item["score"]),
-            notes=item.get("notes", ""),
-        )
+    try:
+        items = json.loads(raw.strip())
+    except json.JSONDecodeError:
+        start, end = raw.find("["), raw.rfind("]") + 1
+        items = json.loads(raw[start:end]) if start != -1 else []
+    return [
+        DimensionScore(name=item["name"], score=float(item["score"]), notes=item.get("notes", ""))
         for item in items
         if item.get("name") in dimension_names
     ]
-
-    return scores, tokens_in, tokens_out
-
-
-async def _refine_review(review_draft: str, diff: str, weak: list[DimensionScore]) -> tuple[str, int, int]:
-    """Ask Claude to improve the review for the weakest dimensions."""
-    client = _get_client()
-    prompt = build_refinement_prompt(review_draft, diff, weak)
-
-    response, model_used = await _create_with_model_fallback(
-        client,
-        prompt=prompt,
-        max_tokens=MAX_TOKENS_REFINE,
-    )
-    logger.info("self_eval.refine_model_used", model=model_used)
-
-    refined = response.content[0].text
-    return refined, response.usage.input_tokens, response.usage.output_tokens
 
 
 async def run_self_eval(
@@ -149,7 +110,11 @@ async def run_self_eval(
     diff: str,
     pr_number: int,
 ) -> tuple[str, list[EvalScore], int, float, PhaseTrace]:
-    """Run the self-evaluation loop.
+    """Run the self-evaluation loop using a multi-turn conversation.
+
+    The diff is placed in the system prompt once with a cache_control breakpoint.
+    Subsequent API calls reuse the same system, so the diff tokens are charged at
+    Anthropic's cache-read rate (~10% of normal input price) rather than full price.
 
     Returns (final_review, eval_scores, iterations, avg_score, phase_trace).
     """
@@ -160,31 +125,61 @@ async def run_self_eval(
     current_draft = review_draft
     final_scores: list[DimensionScore] = []
 
+    client = _get_client()
+    # Diff lives here — cached once, read cheaply on every subsequent call.
+    system_blocks = build_eval_system_blocks(diff)
+    messages: list[dict] = []
+
     with agent_span("devmind.self_eval", {"pr.number": pr_number}) as span:
         for iteration in range(1, MAX_ITERATIONS + 1):
-            scores, t_in, t_out = await _score_review(current_draft, diff)
-            total_tokens_in += t_in
-            total_tokens_out += t_out
-            final_scores = scores
-
-            avg = sum(s.score for s in scores) / len(scores) if scores else 0.0
-            logger.info(
-                "self_eval.scored",
-                iteration=iteration,
-                avg_score=round(avg, 2),
-                threshold=PASS_THRESHOLD,
+            # Score the current draft — diff is in system, not re-sent here.
+            score_text = (
+                build_score_message(current_draft)
+                if iteration == 1
+                else build_rescore_message(current_draft)
             )
+            messages.append({"role": "user", "content": score_text})
+
+            score_response, model_used = await _create_with_model_fallback(
+                client,
+                prompt="",          # unused — messages already built
+                max_tokens=MAX_TOKENS_EVAL,
+                system=system_blocks,
+                messages=messages,
+            )
+            logger.info("self_eval.score_model_used", model=model_used, iteration=iteration)
+
+            score_text_raw = score_response.content[0].text
+            messages.append({"role": "assistant", "content": score_text_raw})
+            total_tokens_in += score_response.usage.input_tokens
+            total_tokens_out += score_response.usage.output_tokens
+
+            final_scores = _parse_scores(score_text_raw)
+            avg = sum(s.score for s in final_scores) / len(final_scores) if final_scores else 0.0
+            logger.info("self_eval.scored", iteration=iteration, avg_score=round(avg, 2), threshold=PASS_THRESHOLD)
 
             if avg >= PASS_THRESHOLD or iteration == MAX_ITERATIONS:
-                record_eval_result(span, [s.score for s in scores], iteration)
+                record_eval_result(span, [s.score for s in final_scores], iteration)
                 break
 
-            # Refine — target the bottom 3 dimensions
-            weak = sorted(scores, key=lambda s: s.score)[:3]
-            refined, r_in, r_out = await _refine_review(current_draft, diff, weak)
-            total_tokens_in += r_in
-            total_tokens_out += r_out
-            current_draft = refined
+            # Refinement — target the bottom 3 dimensions, no diff re-send needed.
+            weak = sorted(final_scores, key=lambda s: s.score)[:3]
+            refine_msg = build_refinement_message(weak)
+            messages.append({"role": "user", "content": refine_msg})
+
+            refine_response, model_used = await _create_with_model_fallback(
+                client,
+                prompt="",
+                max_tokens=MAX_TOKENS_REFINE,
+                system=system_blocks,
+                messages=messages,
+            )
+            logger.info("self_eval.refine_model_used", model=model_used, iteration=iteration)
+
+            current_draft = refine_response.content[0].text
+            messages.append({"role": "assistant", "content": current_draft})
+            total_tokens_in += refine_response.usage.input_tokens
+            total_tokens_out += refine_response.usage.output_tokens
 
         record_llm_usage(span, total_tokens_in, total_tokens_out)
 
