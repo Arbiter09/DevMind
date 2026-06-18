@@ -1,10 +1,10 @@
 """Agent Orchestrator — the main agentic loop.
 
-Runs the four phases in sequence for a single PR review job:
-  1. Context Gathering  → fetch PR metadata, diff, file contents (via MCP + Redis cache)
-  2. Analysis          → build compressed prompt, call Claude for initial review
-  3. Self-Evaluation   → score review against 12-dim rubric, refine if needed
-  4. Posting           → format + post final review to GitHub
+Runs three phases in sequence for a single PR review job:
+  1. Agentic Review   → Claude decides which tools to call, gathers context,
+                        writes the initial review draft (replaces old phases 1+2)
+  2. Self-Evaluation  → score review against 12-dim rubric, refine if needed
+  3. Posting          → format + post final review to GitHub
 
 Job state is persisted to Redis as a JSON blob so the dashboard can read it live.
 """
@@ -19,9 +19,10 @@ import structlog
 
 from ..cache import get_cache_client
 from ..cache.redis_url import get_redis_url
+from ..mcp.tools import get_pr_metadata
 from ..models import JobStatus, ReviewJob
 from ..telemetry.spans import agent_span, get_current_trace_id
-from .phases import run_analysis, run_context_gathering, run_posting, run_self_eval
+from .phases import run_agentic_review, run_posting, run_self_eval
 
 logger = structlog.get_logger(__name__)
 
@@ -53,27 +54,15 @@ class AgentOrchestrator:
 
             try:
                 cache = get_cache_client()
-                cache_snapshot_before = (cache.hit_count, cache.miss_count)
-
-                # ── Phase 1: Context Gathering ──────────────────────────────
-                log.info("phase.start", phase="context_gathering")
-                metadata, diff, file_contexts, phase1_trace = await run_context_gathering(
-                    pr_number=pr_number,
-                    repo=repo,
-                    cache_stats={},
-                )
-                job.phases.append(phase1_trace)
-
-                h_after, m_after = cache.hit_count, cache.miss_count
-                h_before, m_before = cache_snapshot_before
-                phase1_trace.cache_hits = h_after - h_before
-                phase1_trace.cache_misses = m_after - m_before
-
-                head_sha = metadata["head_sha"]
+                cache_before = (cache.hit_count, cache.miss_count)
 
                 # ── Review-draft cache check ─────────────────────────────────
-                # If this exact commit has been reviewed before, skip the
-                # Claude calls entirely — zero tokens spent.
+                # Fetch PR metadata (cheap, cached 300s) to get head_sha for the
+                # cache key.  If this exact commit was reviewed before we skip ALL
+                # Claude calls — zero tokens spent.
+                metadata = await get_pr_metadata(pr_number=pr_number, repo=repo)
+                head_sha = metadata["head_sha"]
+
                 cached_review, draft_hit = await cache.get(
                     "review_draft", repo=repo, pr_number=pr_number, head_sha=head_sha
                 )
@@ -84,6 +73,7 @@ class AgentOrchestrator:
                     eval_scores_raw = cached_review["eval_scores"]
                     iterations = cached_review["iterations"]
                     avg_score = cached_review["avg_score"]
+                    diff_for_eval = cached_review.get("diff", "")
 
                     from ..models import EvalScore
                     eval_scores = [EvalScore(**s) for s in eval_scores_raw]
@@ -92,17 +82,31 @@ class AgentOrchestrator:
                     job.eval_iterations = iterations
                     job.avg_eval_score = round(avg_score, 3)
                 else:
-                    # ── Phase 2: Analysis ────────────────────────────────────
-                    log.info("phase.start", phase="analysis")
-                    review_draft, phase2_trace = await run_analysis(metadata, diff, file_contexts)
-                    job.phases.append(phase2_trace)
-
-                    # ── Phase 3: Self-Evaluation ─────────────────────────────
-                    log.info("phase.start", phase="self_eval")
-                    final_review, eval_scores, iterations, avg_score, phase3_trace = (
-                        await run_self_eval(review_draft, diff, pr_number)
+                    # ── Phase 1: Agentic Review ──────────────────────────────
+                    # Claude decides which tools to call, gathers context, and
+                    # produces the initial review draft autonomously.
+                    log.info("phase.start", phase="agentic_review")
+                    review_draft, tool_calls_log, phase1_trace = await run_agentic_review(
+                        pr_number=pr_number,
+                        repo=repo,
                     )
-                    job.phases.append(phase3_trace)
+                    job.phases.append(phase1_trace)
+                    log.info(
+                        "phase.complete",
+                        phase="agentic_review",
+                        tool_calls=len(tool_calls_log),
+                    )
+
+                    # Fetch diff for self-eval (cached — was already fetched by Claude)
+                    from ..mcp.tools import get_pr_diff
+                    diff_for_eval = await get_pr_diff(pr_number=pr_number, repo=repo)
+
+                    # ── Phase 2: Self-Evaluation ─────────────────────────────
+                    log.info("phase.start", phase="self_eval")
+                    final_review, eval_scores, iterations, avg_score, phase2_trace = (
+                        await run_self_eval(review_draft, diff_for_eval, pr_number)
+                    )
+                    job.phases.append(phase2_trace)
                     job.eval_scores = eval_scores
                     job.eval_iterations = iterations
                     job.avg_eval_score = round(avg_score, 3)
@@ -115,25 +119,29 @@ class AgentOrchestrator:
                             "eval_scores": [s.model_dump() for s in eval_scores],
                             "iterations": iterations,
                             "avg_score": avg_score,
+                            "diff": diff_for_eval[:8000],
                         },
                         repo=repo,
                         pr_number=pr_number,
                         head_sha=head_sha,
                     )
 
-                # ── Phase 4: Posting ─────────────────────────────────────────
+                # ── Phase 3: Posting ─────────────────────────────────────────
                 log.info("phase.start", phase="posting")
-                phase4_trace = await run_posting(
+                phase3_trace = await run_posting(
                     final_review, eval_scores, avg_score, iterations, pr_number, repo
                 )
-                job.phases.append(phase4_trace)
+                job.phases.append(phase3_trace)
                 job.review_body = final_review
 
                 # ── Aggregate metrics ────────────────────────────────────────
+                h_after, m_after = cache.hit_count, cache.miss_count
+                h_before, m_before = cache_before
+
                 job.total_tokens_input = sum(p.tokens_input for p in job.phases)
                 job.total_tokens_output = sum(p.tokens_output for p in job.phases)
-                job.total_cache_hits = cache.hit_count - h_before
-                job.total_cache_misses = cache.miss_count - m_before
+                job.total_cache_hits = h_after - h_before
+                job.total_cache_misses = m_after - m_before
 
                 job.status = JobStatus.COMPLETED
                 job.completed_at = datetime.utcnow()

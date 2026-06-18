@@ -1,7 +1,7 @@
 """GitHub webhook handler.
 
 Validates HMAC-SHA256 signature and acknowledges the event.
-Reviews are not triggered automatically — use POST /api/review to queue one manually.
+Reviews are NOT triggered automatically — use POST /api/review to queue one manually.
 """
 from __future__ import annotations
 

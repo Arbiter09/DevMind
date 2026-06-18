@@ -1,19 +1,22 @@
 """Redis cache-aside layer for MCP tool results.
 
-Cache key structure: mcp:{tool_name}:{sha}:{path_or_pr_hash}
+Cache key structure: mcp:{tool_name}:{sha256(kwargs)[:16]}
 
 TTL policy:
-  read_file        → 86400s  (content at a git SHA is immutable)
-  get_pr_diff      → 3600s   (diff is stable at a given HEAD SHA)
-  get_pr_metadata  → 300s    (labels/status can change)
-  list_changed_files → 3600s
-  get_file_history → 1800s
+  read_file                      → 86400s  (content at a git SHA is immutable)
+  get_pr_diff                    → 3600s   (diff is stable at a given HEAD SHA)
+  get_pr_metadata                → 300s    (labels/status can change)
+  list_changed_files             → 3600s
+  get_file_history               → 1800s
+  get_ci_results                 → 120s    (check run status changes during CI run)
+  scan_dependency_vulnerabilities → 3600s  (stable per head SHA)
+  search_repo_docs               → 3600s  (docs rarely change mid-review)
+  review_draft                   → 604800s (7d, keyed on head_sha — immutable)
 """
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -27,6 +30,9 @@ TOOL_TTL: dict[str, int] = {
     "get_pr_metadata": 300,
     "list_changed_files": 3600,
     "get_file_history": 1800,
+    "get_ci_results": 120,
+    "scan_dependency_vulnerabilities": 3600,
+    "search_repo_docs": 3600,
     # Keyed on (repo, pr_number, head_sha) — the SHA is immutable so the
     # review for a given commit never changes. Cached for 7 days.
     "review_draft": 86400 * 7,

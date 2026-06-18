@@ -1,5 +1,7 @@
+from .ci_tools import get_ci_results, search_repo_docs
 from .file_tools import get_file_history, list_changed_files, read_file
 from .pr_tools import get_pr_diff, get_pr_metadata, post_review_comment
+from .security_tools import run_static_analysis, scan_dependency_vulnerabilities
 
 __all__ = [
     "get_pr_metadata",
@@ -8,4 +10,8 @@ __all__ = [
     "list_changed_files",
     "get_file_history",
     "post_review_comment",
+    "get_ci_results",
+    "search_repo_docs",
+    "scan_dependency_vulnerabilities",
+    "run_static_analysis",
 ]

@@ -24,6 +24,8 @@ class GitHubClient:
                 "X-GitHub-Api-Version": "2022-11-28",
             },
             timeout=30.0,
+            follow_redirects=True,
+            transport=httpx.AsyncHTTPTransport(retries=3),
         )
 
     async def get_pr(self, owner: str, repo: str, pr_number: int) -> dict[str, Any]:
@@ -110,6 +112,38 @@ class GitHubClient:
         r.raise_for_status()
         return r.json()
 
+    async def list_pr_reviews(
+        self, owner: str, repo: str, pr_number: int
+    ) -> list[dict[str, Any]]:
+        """Return all reviews for a PR, ordered oldest-first."""
+        r = await self._client.get(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+            params={"per_page": 100},
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def list_closed_pulls(
+        self, owner: str, repo: str, max_prs: int = 200
+    ) -> list[dict[str, Any]]:
+        """Return closed PRs, newest-first, up to max_prs."""
+        pulls: list[dict[str, Any]] = []
+        page = 1
+        while len(pulls) < max_prs:
+            r = await self._client.get(
+                f"/repos/{owner}/{repo}/pulls",
+                params={"state": "closed", "per_page": 100, "page": page, "sort": "updated", "direction": "desc"},
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            pulls.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return pulls[:max_prs]
+
     async def create_review(
         self, owner: str, repo: str, pr_number: int, body: str, event: str = "COMMENT"
     ) -> dict[str, Any]:
@@ -119,6 +153,47 @@ class GitHubClient:
         )
         r.raise_for_status()
         return r.json()
+
+    async def get_check_runs(
+        self, owner: str, repo: str, ref: str
+    ) -> list[dict[str, Any]]:
+        """Return all CI check runs for a given commit SHA."""
+        r = await self._client.get(
+            f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+            params={"per_page": 100},
+        )
+        r.raise_for_status()
+        return r.json().get("check_runs", [])
+
+    async def get_dependency_review(
+        self, owner: str, repo: str, base_sha: str, head_sha: str
+    ) -> dict[str, Any]:
+        """Return dependency changes between two commits including vulnerability data.
+
+        Returns an empty result dict if the feature is not enabled for the repo
+        (GitHub Advanced Security required for private repos).
+        """
+        r = await self._client.get(
+            f"/repos/{owner}/{repo}/dependency-graph/compare/{base_sha}...{head_sha}",
+        )
+        if r.status_code in (404, 403):
+            return {"vulnerabilities": [], "available": False}
+        r.raise_for_status()
+        return r.json()
+
+    async def get_repo_file(
+        self, owner: str, repo: str, path: str, ref: str = "HEAD"
+    ) -> str:
+        """Return raw text content of a repository file, or empty string if not found."""
+        r = await self._client.get(
+            f"/repos/{owner}/{repo}/contents/{path}",
+            params={"ref": ref},
+            headers={"Accept": "application/vnd.github.raw+json"},
+        )
+        if r.status_code == 404:
+            return ""
+        r.raise_for_status()
+        return r.text
 
     async def close(self) -> None:
         await self._client.aclose()

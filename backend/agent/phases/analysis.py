@@ -76,11 +76,12 @@ async def run_analysis(
     pr_metadata: dict[str, Any],
     diff: str,
     file_contexts: dict[str, str],
+    enriched_context: dict[str, Any] | None = None,
 ) -> tuple[str, PhaseTrace]:
     """Returns (review_draft, phase_trace)."""
     started = datetime.utcnow()
 
-    prompt = build_analysis_prompt(pr_metadata, diff, file_contexts)
+    prompt = build_analysis_prompt(pr_metadata, diff, file_contexts, enriched_context or {})
     tokens_in = 0
     tokens_out = 0
 
